@@ -36,9 +36,13 @@ export interface GCGResult {
   error?: string;
 }
 
-const DEFAULT_CONFIG: GCGConfig = {
-  host: process.env.LYRIE_GPU_HOST ?? "127.0.0.1",
-  port: parseInt(process.env.LYRIE_GPU_PORT ?? "22", 10),
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val) throw new Error(`GCGStrategy: ${name} env var is required but not set`);
+  return val;
+}
+
+const DEFAULT_CONFIG: Omit<GCGConfig, "host" | "port"> = {
   scriptPath: "/root/lyrie-gpu/gcg_attack.py",
   model: "gpt2",
   steps: 500,
@@ -49,7 +53,12 @@ export class GCGStrategy {
   private config: GCGConfig;
 
   constructor(config: Partial<GCGConfig> = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.config = {
+      ...DEFAULT_CONFIG,
+      host: config.host ?? requireEnv("LYRIE_GPU_HOST"),
+      port: config.port ?? parseInt(process.env.LYRIE_GPU_PORT ?? "", 10) || (() => { throw new Error("GCGStrategy: LYRIE_GPU_PORT env var is required but not set"); })(),
+      ...config,
+    };
   }
 
   /** Check if the H200 GPU host is reachable */

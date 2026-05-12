@@ -41,9 +41,13 @@ export interface AutoDANResult {
   error?: string;
 }
 
-const DEFAULT_CONFIG: AutoDANConfig = {
-  host: process.env.LYRIE_GPU_HOST ?? "127.0.0.1",
-  port: parseInt(process.env.LYRIE_GPU_PORT ?? "22", 10),
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val) throw new Error(`AutoDANStrategy: ${name} env var is required but not set`);
+  return val;
+}
+
+const DEFAULT_CONFIG: Omit<AutoDANConfig, "host" | "port"> = {
   scriptPath: "/root/lyrie-gpu/autodan_attack.py",
   endpoint: "https://api.openai.com/v1",
   apiKey: "",
@@ -57,7 +61,12 @@ export class AutoDANStrategy {
   private config: AutoDANConfig;
 
   constructor(config: Partial<AutoDANConfig> = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.config = {
+      ...DEFAULT_CONFIG,
+      host: config.host ?? requireEnv("LYRIE_GPU_HOST"),
+      port: config.port ?? parseInt(process.env.LYRIE_GPU_PORT ?? "", 10) || (() => { throw new Error("AutoDANStrategy: LYRIE_GPU_PORT env var is required but not set"); })(),
+      ...config,
+    };
   }
 
   /** Check SSH connectivity to the attack host */

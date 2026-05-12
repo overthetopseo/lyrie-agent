@@ -7,7 +7,9 @@ import { describe, expect, test } from "bun:test";
 import {
   createRevocationList,
   isRevoked,
+  safeIsRevoked,
   addRevocation,
+  verifyRevocationList,
 } from "../src/revocation";
 import { generateKeyPair } from "../src/crypto";
 
@@ -158,6 +160,8 @@ describe("addRevocation", () => {
     expect(isRevoked("c3", crl)).toBe(false);
   });
 
+  // safeIsRevoked tests are in their own describe block below.
+
   test("all RevocationReason values are accepted", () => {
     const issuer = makeIssuer();
     const reasons = [
@@ -183,5 +187,69 @@ describe("addRevocation", () => {
     }
 
     expect(crl.entries).toHaveLength(reasons.length);
+  });
+});
+
+// ─── safeIsRevoked ────────────────────────────────────────────────────────────
+
+describe("safeIsRevoked", () => {
+  function makeIssuerWithCrl(certIds: string[] = []) {
+    const kp = generateKeyPair();
+    const crl = createRevocationList(
+      certIds.map((certId) => ({ certId, reason: "unspecified" as const, revokedBy: "admin" })),
+      { privateKey: kp.privateKey, issuerAgentId: "test-issuer" },
+    );
+    return { kp, crl };
+  }
+
+  test("returns revoked:false for cert not in list (valid CRL)", () => {
+    const { kp, crl } = makeIssuerWithCrl();
+    const result = safeIsRevoked("cert-abc", crl, kp.publicKey);
+    expect(result.revoked).toBe(false);
+    expect(result.error).toBeUndefined();
+  });
+
+  test("returns revoked:true for cert in list (valid CRL)", () => {
+    const { kp, crl } = makeIssuerWithCrl(["cert-revoked"]);
+    const result = safeIsRevoked("cert-revoked", crl, kp.publicKey);
+    expect(result.revoked).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  test("returns revoked:false with error when CRL signature is invalid (wrong public key)", () => {
+    const { crl } = makeIssuerWithCrl(["cert-revoked"]);
+    const wrongKp = generateKeyPair();
+    const result = safeIsRevoked("cert-revoked", crl, wrongKp.publicKey);
+    expect(result.revoked).toBe(false);
+    expect(result.error).toMatch(/CRL verification failed/);
+  });
+
+  test("never trusts entries when CRL is tampered", () => {
+    const { kp, crl } = makeIssuerWithCrl([]);
+    // Tamper: inject a revocation entry without re-signing.
+    const tamperedCrl = {
+      ...crl,
+      entries: [
+        ...crl.entries,
+        { certId: "valid-cert", reason: "unspecified" as const, revokedBy: "attacker", revokedAt: new Date().toISOString() },
+      ],
+    };
+    // CRL signature no longer matches — safeIsRevoked should refuse.
+    const result = safeIsRevoked("valid-cert", tamperedCrl, kp.publicKey);
+    expect(result.revoked).toBe(false);
+    expect(result.error).toMatch(/CRL verification failed/);
+  });
+
+  test("accepts newly-added (legitimately re-signed) revocations", () => {
+    const { kp, crl } = makeIssuerWithCrl([]);
+    const { addRevocation } = require("../src/revocation");
+    const updated = addRevocation(
+      crl,
+      { certId: "new-cert", reason: "key_compromise", revokedBy: "admin" },
+      { privateKey: kp.privateKey },
+    );
+    const result = safeIsRevoked("new-cert", updated, kp.publicKey);
+    expect(result.revoked).toBe(true);
+    expect(result.error).toBeUndefined();
   });
 });

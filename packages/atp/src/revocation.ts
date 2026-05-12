@@ -105,6 +105,27 @@ export function isRevoked(certId: string, crl: RevocationList): boolean {
   return crl.entries.some((e) => e.certId === certId);
 }
 
+/**
+ * Safe revocation check: ALWAYS verifies the CRL signature before trusting entries.
+ *
+ * Use this instead of calling `isRevoked` directly so that a tampered or
+ * unsigned CRL cannot be used to un-revoke a certificate.
+ *
+ * @param certId           The certificate ID to check.
+ * @param crl              The revocation list to consult.
+ * @param issuerPublicKey  Ed25519 public key (base64) of the expected CRL issuer.
+ * @returns `{ revoked: boolean }` on success, or `{ revoked: false, error: string }` if CRL is invalid.
+ */
+export function safeIsRevoked(
+  certId: string,
+  crl: RevocationList,
+  issuerPublicKey: string,
+): { revoked: boolean; error?: string } {
+  const v = verifyRevocationList(crl, issuerPublicKey);
+  if (!v.valid) return { revoked: false, error: `CRL verification failed: ${v.reason}` };
+  return { revoked: isRevoked(certId, crl) };
+}
+
 // ─── Append ──────────────────────────────────────────────────────────────────
 
 /**

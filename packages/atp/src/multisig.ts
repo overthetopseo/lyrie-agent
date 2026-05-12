@@ -34,6 +34,8 @@ export interface MultiSigRequest {
   signers: string[];
   /** ISO 8601 — when the request was created. */
   createdAt: string;
+  /** ISO 8601 — when the request expires (default TTL: 1 hour). */
+  expiresAt: string;
   /** Collected signatures. */
   signatures: Array<{
     signerId: string;
@@ -49,12 +51,14 @@ export interface MultiSigRequest {
 /**
  * Create a new MultiSigRequest with no signatures yet.
  *
+ * @param ttlSeconds - Time-to-live in seconds (default: 3600 = 1 hour).
  * @throws if requiredSigners > signers.length or < 1.
  */
 export function createMultiSigRequest(
   payload: Record<string, unknown>,
   signers: string[],
   requiredSigners: number,
+  ttlSeconds?: number,
 ): MultiSigRequest {
   if (signers.length === 0) {
     throw new RangeError("ATP multisig: signers list must not be empty");
@@ -74,6 +78,7 @@ export function createMultiSigRequest(
     requiredSigners,
     signers: [...new Set(signers)], // deduplicate
     createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + (ttlSeconds ?? 3600) * 1000).toISOString(),
     signatures: [],
   };
 }
@@ -119,15 +124,21 @@ export function addSignature(
  * Determine whether a MultiSigRequest has collected enough valid signatures.
  *
  * Verification:
- *   1. The signer must be in `request.signers`.
- *   2. The signer's public key must be in `signerPublicKeys`.
- *   3. The Ed25519 signature over `{ id, payload }` must verify.
- *   4. At least `requiredSigners` such valid, distinct signatures must exist.
+ *   1. The request must not be expired.
+ *   2. The signer must be in `request.signers`.
+ *   3. The signer's public key must be in `signerPublicKeys`.
+ *   4. The Ed25519 signature over `{ id, payload }` must verify.
+ *   5. At least `requiredSigners` such valid, distinct signatures must exist.
  */
 export function isAuthorized(
   request: MultiSigRequest,
   signerPublicKeys: Map<string, string>,
-): { authorized: boolean; signaturesCollected: number; required: number } {
+): { authorized: boolean; signaturesCollected: number; required: number; reason?: string } {
+  // Check expiry before evaluating signatures.
+  if (new Date(request.expiresAt) < new Date()) {
+    return { authorized: false, signaturesCollected: 0, required: request.requiredSigners, reason: "expired" };
+  }
+
   const message = { id: request.id, payload: request.payload };
   const seen = new Set<string>();
   let validCount = 0;

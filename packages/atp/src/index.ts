@@ -98,6 +98,7 @@ export type { DelegationCertificate } from "./delegation";
 export {
   createRevocationList,
   isRevoked,
+  safeIsRevoked,
   addRevocation,
   verifyRevocationList,
 } from "./revocation";

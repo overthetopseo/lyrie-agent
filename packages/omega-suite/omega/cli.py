@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     auth_sub.add_parser("list",  help="List all configured keys (values redacted)")
     p_auth_set = auth_sub.add_parser("set", help="Set a specific API key")
     p_auth_set.add_argument("--key",   required=True, help="Key name (e.g. ANTHROPIC_API_KEY)")
-    p_auth_set.add_argument("--value", required=True, help="Key value")
+    # FIX A: --value removed; value is read via getpass to avoid shell history exposure
     p_auth_get = auth_sub.add_parser("get", help="Get a specific API key (redacted)")
     p_auth_get.add_argument("--key", required=True, help="Key name")
     p_auth_unset = auth_sub.add_parser("unset", help="Remove a specific API key")
@@ -232,10 +232,10 @@ def cmd_scan(args) -> int:
             for f in findings:
                 print(f"  [{f.severity.upper()}] {f.rule_id}: {f.message} ({f.location})")
         print(f"\n[lyrie scan] {len(findings)} finding(s)")
-    except ImportError:
-        print("[lyrie scan] Static analysis engine initialised.")
-        print(f"[lyrie scan] Scanning: {path}")
-        print("[lyrie scan] Install optional deps: pip install lyrie-omega[analysis]")
+    except ImportError as e:
+        # FIX D: print warning to stderr so the user knows what is missing
+        print(f"[warning] Optional module not available: {e}", file=sys.stderr)
+        print(f"[warning] Install full deps: pip install lyrie-omega[full]", file=sys.stderr)
     return 0
 
 
@@ -263,21 +263,12 @@ def cmd_cvss(args) -> int:
                 for k, v in result["metrics"].items():
                     print(f"    {k}: {v}")
             print()
+    # FIX C: Remove the wrong CVSS fallback scoring block — it gave incorrect scores.
+    # Users must install the proper library instead.
     except ImportError:
-        # Minimal fallback CVSS parser
-        vector = args.vector
-        severity = "UNKNOWN"
-        score = "N/A"
-        if "/C:H/I:H/A:H" in vector and "AV:N" in vector and "PR:N" in vector:
-            score, severity = "9.8", "CRITICAL"
-        elif "/C:H" in vector or "/I:H" in vector:
-            score, severity = "7.5", "HIGH"
-        elif "/C:M" in vector or "/I:M" in vector:
-            score, severity = "5.3", "MEDIUM"
-        print(f"\n  Vector:    {vector}")
-        print(f"  Score:     {score} / 10.0")
-        print(f"  Severity:  {severity}")
-        print(f"\n  (Install z3-solver for full SMT analysis: pip install lyrie-omega[analysis])\n")
+        print("error: CVSS calculation requires: pip install lyrie-omega[analysis]", file=sys.stderr)
+        print("       or: pip install cvss", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -316,10 +307,10 @@ def cmd_exploit(args) -> int:
             if result.get("summary"):
                 print(f"  Summary:     {result['summary']}")
             print()
-    except ImportError:
-        print("\n[lyrie exploit] Exploit feasibility module loaded.")
-        print("[lyrie exploit] For full SMT analysis: pip install lyrie-omega[analysis]")
-        print(f"[lyrie exploit] Target {target} queued for analysis.\n")
+    except ImportError as e:
+        # FIX D: print warning to stderr so the user knows what is missing
+        print(f"[warning] Optional module not available: {e}", file=sys.stderr)
+        print(f"[warning] Install full deps: pip install lyrie-omega[full]", file=sys.stderr)
     return 0
 
 
@@ -349,10 +340,10 @@ def cmd_validate(args) -> int:
                 print(f"[lyrie validate] Report written to {args.report}")
             else:
                 print(report)
-    except ImportError:
-        print("[lyrie validate] Validation orchestrator initialised.")
-        print(f"[lyrie validate] Target {args.target} ready for validation.")
-        print("[lyrie validate] Install: pip install lyrie-omega[anthropic] for agentic mode.\n")
+    except ImportError as e:
+        # FIX D: print warning to stderr so the user knows what is missing
+        print(f"[warning] Optional module not available: {e}", file=sys.stderr)
+        print(f"[warning] Install full deps: pip install lyrie-omega[full]", file=sys.stderr)
     return 0
 
 
@@ -386,10 +377,10 @@ def cmd_intel(args) -> int:
             gharchive=args.gharchive,
         )
         print(f"[lyrie intel] Evidence collected to {output_dir}")
-    except ImportError:
-        print(f"[lyrie intel] Evidence collection initialised for {args.repo}")
-        print(f"[lyrie intel] Output directory: {output_dir}")
-        print("[lyrie intel] Install optional deps: pip install lyrie-omega[full]\n")
+    except ImportError as e:
+        # FIX D: print warning to stderr so the user knows what is missing
+        print(f"[warning] Optional module not available: {e}", file=sys.stderr)
+        print(f"[warning] Install full deps: pip install lyrie-omega[full]", file=sys.stderr)
     return 0
 
 
@@ -421,10 +412,10 @@ def cmd_smt(args) -> int:
             if args.model and result.get("model"):
                 print(f"  Model:      {result['model']}")
             print()
-    except ImportError:
-        print(f"\n  Expression: {args.check}")
-        print(f"  Status:     (z3-solver not installed)")
-        print(f"  Install:    pip install lyrie-omega[analysis]\n")
+    except ImportError as e:
+        # FIX D: print warning to stderr so the user knows what is missing
+        print(f"[warning] Optional module not available: {e}", file=sys.stderr)
+        print(f"[warning] Install full deps: pip install lyrie-omega[full]", file=sys.stderr)
     return 0
 
 
@@ -490,14 +481,24 @@ def _save_config(cfg: dict) -> None:
 
 def cmd_auth(args) -> int:
     if args.auth_command == "set":
-        if not args.key or not args.value:
-            print("error: provide --key and --value", file=sys.stderr)
+        if not args.key:
+            print("error: provide --key", file=sys.stderr)
+            return 1
+        # FIX B: Validate key name against KNOWN_KEYS allowlist (prevents path traversal / injection)
+        if args.key not in KNOWN_KEYS:
+            print(f"error: unknown key '{args.key}'. Known keys: {', '.join(KNOWN_KEYS)}", file=sys.stderr)
+            return 1
+        # FIX A: Use getpass instead of --value to avoid shell history / ps exposure
+        import getpass
+        value = getpass.getpass(f"Enter value for {args.key}: ")
+        if not value:
+            print("error: value must not be empty", file=sys.stderr)
             return 1
         cfg = _load_config()
-        cfg[args.key] = args.value
+        cfg[args.key] = value
         _save_config(cfg)
         # Also export to current env
-        os.environ[args.key] = args.value
+        os.environ[args.key] = value
         print(f"✓ {args.key} saved to {CONFIG_FILE}")
         return 0
 
@@ -536,10 +537,11 @@ def cmd_auth(args) -> int:
         print("  ─────────────────────────────────────────")
         print(f"  Keys stored in: {CONFIG_FILE} (chmod 600)\n")
         cfg = _load_config()
+        import getpass
         for key, desc in KNOWN_KEYS.items():
             current = cfg.get(key) or os.environ.get(key)
             current_display = f" (current: {'*' * 8}{current[-4:]})" if current else ""
-            val = input(f"  {key}{current_display}\n  {desc}\n  → ").strip()
+            val = getpass.getpass(f"  {key}{current_display}\n  {desc}\n  → ").strip()
             if val:
                 cfg[key] = val
             print()
@@ -547,7 +549,7 @@ def cmd_auth(args) -> int:
         print(f"  ✓ Configuration saved to {CONFIG_FILE}\n")
         return 0
 
-    parser.print_help()
+    build_parser().parse_args(["auth", "--help"])
     return 0
 
 
@@ -584,5 +586,5 @@ def cmd_config(args) -> int:
             print("No config file found")
         return 0
 
-    parser.print_help()
+    build_parser().parse_args(["config", "--help"])
     return 0
