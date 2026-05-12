@@ -99,6 +99,7 @@ export {
   createRevocationList,
   isRevoked,
   addRevocation,
+  verifyRevocationList,
 } from "./revocation";
 export type { RevocationEntry, RevocationList, RevocationReason } from "./revocation";
 

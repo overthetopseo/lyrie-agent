@@ -13,7 +13,7 @@
  * © OTT Cybersecurity LLC — https://lyrie.ai
  */
 
-import { canonicalize, signCanonical, newUuid } from "./crypto";
+import { canonicalize, signCanonical, verifyCanonical, newUuid } from "./crypto";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -73,10 +73,33 @@ export function createRevocationList(
   };
 }
 
+// ─── Verify ──────────────────────────────────────────────────────────────────
+
+/**
+ * Verify the RevocationList's own signature before trusting its entries.
+ * Always call this before calling isRevoked() in production.
+ *
+ * @param crl              The revocation list to verify.
+ * @param issuerPublicKey  Ed25519 public key (base64) of the expected issuer.
+ */
+export function verifyRevocationList(
+  crl: RevocationList,
+  issuerPublicKey: string,
+): { valid: boolean; reason?: string } {
+  try {
+    const ok = verifyCanonical({ entries: crl.entries }, issuerPublicKey, crl.signature);
+    if (!ok) return { valid: false, reason: "revocation list signature is invalid" };
+    return { valid: true };
+  } catch (e) {
+    return { valid: false, reason: `revocation list verification threw: ${e}` };
+  }
+}
+
 // ─── Query ───────────────────────────────────────────────────────────────────
 
 /**
  * Returns true iff `certId` appears in the revocation list.
+ * NOTE: Always call verifyRevocationList() first to ensure the CRL is authentic.
  */
 export function isRevoked(certId: string, crl: RevocationList): boolean {
   return crl.entries.some((e) => e.certId === certId);

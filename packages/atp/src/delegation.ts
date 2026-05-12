@@ -109,22 +109,23 @@ export function verifyDelegation(
 
 /**
  * Verify a full delegation chain [root, ..., leaf]:
- *   1. Each certificate's parentSignature is valid.
+ *   1. Each certificate's parentSignature is valid (requires publicKeyMap).
  *   2. Each certificate has not expired.
  *   3. chain[i].childAgentId === chain[i+1].parentAgentId (chain linkage).
  *   4. chain[i].maxDepth >= remaining chain length (depth constraint).
  *   5. chain[i+1].delegatedScope ⊆ chain[i].delegatedScope (no widening).
  *
- * `rootPublicKey` is the Ed25519 public key of the root parent agent.
- * Subsequent public keys are derived from the certificates themselves (the
- * childAgentId is expected to own the private key used in the next cert,
- * but at protocol level we only verify chain linkage here — the caller must
- * supply a separate public-key map if full multi-hop crypto verification is
- * needed; this function validates structural + temporal integrity).
+ * @param chain       Ordered list of delegation certs [root → leaf].
+ * @param rootPublicKey  Ed25519 public key (base64) of the root parent agent.
+ * @param publicKeyMap   Map of agentId → Ed25519 public key for every
+ *                       intermediate agent in the chain. Without this, only
+ *                       root signature + structural checks are performed.
+ *                       Pass an empty Map to get structural-only validation.
  */
 export function verifyDelegationChain(
   chain: DelegationCertificate[],
   rootPublicKey: string,
+  publicKeyMap: Map<string, string> = new Map(),
 ): { valid: boolean; depth: number; reason?: string } {
   if (chain.length === 0) {
     return { valid: false, depth: 0, reason: "delegation chain is empty" };
@@ -171,16 +172,24 @@ export function verifyDelegationChain(
       }
     }
 
-    // We verify the signature of each subsequent cert with the _parent_ public key.
-    // For multi-hop, the caller would need to supply per-hop keys; here we re-use
-    // rootPublicKey only for the first link. For links beyond root, we verify the
-    // structural properties only (expiry, linkage, scope) and note this in the
-    // protocol: full signature verification requires a public-key map per agent.
-    const certResult = verifyDelegation(curr, rootPublicKey);
-    if (!certResult.valid && certResult.reason?.includes("parentSignature")) {
-      // Signature check for non-root links skipped — caller must supply per-hop keys.
-      // Only hard-fail on expiry.
-    } else if (!certResult.valid) {
+    // Full Ed25519 verification: look up the parent's public key in the map.
+    // chain[i] is signed by chain[i].parentAgentId.
+    const parentPubKey = i === 1
+      ? rootPublicKey                          // root signed chain[1]
+      : publicKeyMap.get(prev.parentAgentId);  // intermediate parent
+
+    if (!parentPubKey) {
+      // No key supplied for this hop — structural checks passed but sig unverified.
+      // Treat as invalid to enforce strict verification.
+      return {
+        valid: false,
+        depth: i,
+        reason: `chain[${i}]: no public key for parent agent "${curr.parentAgentId}" in publicKeyMap — cannot verify signature`,
+      };
+    }
+
+    const certResult = verifyDelegation(curr, parentPubKey);
+    if (!certResult.valid) {
       return { valid: false, depth: i, reason: `chain[${i}]: ${certResult.reason}` };
     }
   }

@@ -496,3 +496,9 @@ mod tests {
         assert!(matched.contains(&"LR_CRYPTO_MINER".to_string()));
     }
 }
+
+// NOTE (v1.0.0): The KNOWN_MALWARE_HASHES database contains TEST signatures only.
+// Hash-based detection serves as the architectural scaffold for a real threat-intel
+// feed integration (VirusTotal, NSRL, or internal DB). In production deployments,
+// replace or augment with a live signature source.
+// Real detection in v1.0.0 is delivered via heuristic analysis + LyrieRules engine.
