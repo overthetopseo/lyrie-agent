@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lyrie-omega"
-version = "1.0.5"
+version = "1.0.6"
 description = "Omega-Suite — Lyrie.ai's autonomous binary analysis and exploit research engine"
 readme = "README.md"
 license = {text = "MIT"}
