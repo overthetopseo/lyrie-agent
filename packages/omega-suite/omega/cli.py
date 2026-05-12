@@ -63,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     auth_sub.add_parser("list",  help="List all configured keys (values redacted)")
     p_auth_set = auth_sub.add_parser("set", help="Set a specific API key")
     p_auth_set.add_argument("--key",   required=True, help="Key name (e.g. ANTHROPIC_API_KEY)")
+    p_auth_set.add_argument("--value", help="Key value (omit to be prompted securely)")
     # FIX A: --value removed; value is read via getpass to avoid shell history exposure
     p_auth_get = auth_sub.add_parser("get", help="Get a specific API key (redacted)")
     p_auth_get.add_argument("--key", required=True, help="Key name")
@@ -488,9 +489,11 @@ def cmd_auth(args) -> int:
         if args.key not in KNOWN_KEYS:
             print(f"error: unknown key '{args.key}'. Known keys: {', '.join(KNOWN_KEYS)}", file=sys.stderr)
             return 1
-        # FIX A: Use getpass instead of --value to avoid shell history / ps exposure
-        import getpass
-        value = getpass.getpass(f"Enter value for {args.key}: ")
+        # Support --value for convenience; fall back to secure getpass prompt
+        value = getattr(args, 'value', None)
+        if not value:
+            import getpass
+            value = getpass.getpass(f"Enter value for {args.key}: ").strip()
         if not value:
             print("error: value must not be empty", file=sys.stderr)
             return 1
