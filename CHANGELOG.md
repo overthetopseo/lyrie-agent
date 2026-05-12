@@ -13,6 +13,49 @@ _Nothing yet — open a PR or file an issue at https://github.com/OTT-Cybersecur
 
 ---
 
+## [3.0.0] — 2026-05-12
+
+> **The Infrastructure Release**
+>
+> ATP v2 brings IETF-grade delegation chains, certificate revocation, and multi-party trust.
+> Shield ships GA with real signature detection, heuristics engine, and LyrieRules.
+> Omega-Suite lands on PyPI. Every package version-synced and security-hardened.
+
+### Added
+
+- **ATP v2.0.0** — IETF ATP Draft §6-8 implementation:
+  - Delegation chains: parent→child trust propagation with scope inheritance and max-depth enforcement
+  - Certificate revocation: CRL-style revocation with 5 reason codes (key_compromise, agent_compromised, scope_violation, superseded, unspecified)
+  - Multi-party trust: M-of-N co-signing for high-stakes agent actions
+  - All primitives IETF-referenced; Ed25519 throughout
+- **Shield v1.0.0 GA** — Lyrie's Rust security engine ships stable:
+  - Hash-based signature matching: SHA-256 scan against threat database
+  - Heuristic analysis: entropy detection, suspicious extension/permission combos, malicious string patterns
+  - LyrieRules engine: lightweight YARA-inspired rule system, 5 built-in rules (webshell, reverse shell, crypto miner, packer, dropper)
+  - `lyrie shield scan <path>` — full multi-layer scan with structured report
+- **Omega-Suite v1.0.0** — now on PyPI as `lyrie-omega`:
+  - `pip install lyrie-omega` — first stable PyPI release
+  - Optional extras: `[openai]`, `[anthropic]`, `[full]`, `[analysis]`
+  - Python 3.10-3.12 support
+
+### Changed
+
+- All packages version-synced: core@3.0.0, gateway@3.0.0, mcp@3.0.0, ui@1.0.0, atp@2.0.0, shield@1.0.0 (Rust)
+- All repository URLs corrected to `OTT-Cybersecurity-LLC/lyrie-ai`
+- `next` upgraded to ^16.2.6 (15 CVEs cleared including GHSA-q4gf-8mx6-v5v3)
+- `postcss` upgraded to ^8.5.14 (CVE-2026-41305)
+- Rust `sha2` corrected from 0.11 → 0.10 (resolves Shield Cargo security alerts)
+- Python `requests` upgraded to >=2.32.0 (CVE-2024-35195)
+
+### Security
+
+- 26 CVEs resolved across npm, Cargo, and Python dependency trees
+- Shield v1.0.0 adds real malware detection (was stub-only in v2.0.0)
+- ATP delegation chain verification prevents unauthorized trust escalation
+- ATP revocation enables immediate certificate invalidation on compromise
+
+---
+
 ## [2.0.0] — 2026-05-09
 
 > **The Attack Strategy Release**

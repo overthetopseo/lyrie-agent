@@ -20,6 +20,10 @@ pub mod behavioral;
 pub mod malware;
 pub mod rogue_ai;
 
+// Re-export scanner's public types so consumers can use `lyrie_shield::SignatureMatch` etc.
+pub use scanner::{SignatureMatch, HeuristicFlag, LyrieRule, RuleCondition};
+pub use scanner::{scan_file_hash, scan_heuristic, apply_rule, apply_rules, builtin_rules};
+
 use serde::{Deserialize, Serialize};
 
 /// Threat severity levels
