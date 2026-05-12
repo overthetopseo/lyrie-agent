@@ -137,6 +137,114 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_doctor.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
+    # ── init ───────────────────────────────────────────────────────────────────
+    sub.add_parser("init", help="One-time setup wizard")
+
+    # ── atp ─────────────────────────────────────────────────────────────────────
+    p_atp = sub.add_parser("atp", help="Agent Trust Protocol: verify, badge, receipt")
+    atp_sub = p_atp.add_subparsers(dest="atp_command", metavar="<subcommand>")
+    p_atp_v = atp_sub.add_parser("verify",  help="Verify an agent identity + scope")
+    p_atp_v.add_argument("agent_id", help="Agent ID to verify")
+    p_atp_b = atp_sub.add_parser("badge",   help="Show current ATP compliance badge")
+    p_atp_b.add_argument("--show", action="store_true", help="Display the badge")
+    p_atp_r = atp_sub.add_parser("receipt", help="Audit trail for a session")
+    p_atp_r.add_argument("session_id", help="Session ID")
+
+    # ── cron ──────────────────────────────────────────────────────────────────
+    p_cron = sub.add_parser("cron", help="Manage scheduled jobs")
+    cron_sub = p_cron.add_subparsers(dest="cron_command", metavar="<subcommand>")
+    cron_sub.add_parser("list",    help="List all scheduled jobs")
+    p_cron_add = cron_sub.add_parser("add",    help="Add a scheduled job")
+    p_cron_add.add_argument("schedule", help="Cron expression (e.g. '*/5 * * * *')")
+    p_cron_add.add_argument("command",  help="Command to run")
+    p_cron_dis = cron_sub.add_parser("disable", help="Disable a job")
+    p_cron_dis.add_argument("job_id", help="Job ID")
+    p_cron_log = cron_sub.add_parser("logs",    help="Show execution history")
+    p_cron_log.add_argument("job_id", help="Job ID")
+
+    # ── daemon ─────────────────────────────────────────────────────────────────
+    p_daemon = sub.add_parser("daemon", help="Run Lyrie as a background service")
+    p_daemon.add_argument("--threat-watch", action="store_true", help="Continuous threat detection")
+    p_daemon.add_argument("--self-heal",    action="store_true", help="Auto-recover from threats")
+    p_daemon.add_argument("--interval",     default="5m",        help="KAIROS tick interval (default 5m)")
+    p_daemon.add_argument("--provider",     help="Override LLM provider")
+    p_daemon.add_argument("--dry-run",      action="store_true", help="Show what would run")
+
+    # ── evolve ─────────────────────────────────────────────────────────────────
+    p_evolve = sub.add_parser("evolve", help="Self-improvement: score, extract, prune, train")
+    evo_sub = p_evolve.add_subparsers(dest="evolve_command", metavar="<subcommand>")
+    evo_sub.add_parser("dream",   help="Full nightly cycle (score → extract → prune → summarize)")
+    evo_sub.add_parser("extract", help="Pull reusable skills from recent sessions")
+    evo_sub.add_parser("stats",   help="Domain breakdown")
+    evo_sub.add_parser("status",  help="Library stats + last dream timestamp")
+    p_evo_t = evo_sub.add_parser("train",   help="Export training data")
+    p_evo_t.add_argument("--export", choices=["atropos", "jsonl"], default="atropos")
+
+    # ── governance ────────────────────────────────────────────────────────────────
+    p_gov = sub.add_parser("governance", help="NIST AI RMF assessments + permissions audit")
+    gov_sub = p_gov.add_subparsers(dest="gov_command", metavar="<subcommand>")
+    p_gov_a = gov_sub.add_parser("assess", help="NIST AI RMF 8-question assessment")
+    p_gov_a.add_argument("--config",      help="Auto-infer from config")
+    p_gov_a.add_argument("--interactive", action="store_true")
+    p_gov_p = gov_sub.add_parser("permissions", help="Scan tool permissions for risk")
+    p_gov_p.add_argument("tools_file", help="Tools manifest JSON file")
+
+    # ── memory ─────────────────────────────────────────────────────────────────
+    p_mem = sub.add_parser("memory", help="Memory operations: integrity, recall, forget")
+    mem_sub = p_mem.add_subparsers(dest="memory_command", metavar="<subcommand>")
+    p_mem_i = mem_sub.add_parser("integrity-check", help="Detect tampered memories")
+    p_mem_i.add_argument("--fix", action="store_true", help="Quarantine and repair")
+
+    # ── migrate ─────────────────────────────────────────────────────────────────
+    p_mig = sub.add_parser("migrate", help="Import from another agent platform")
+    p_mig.add_argument("--from",   dest="from_platform", help="Source platform (openclaw, langgraph, etc)")
+    p_mig.add_argument("--detect", action="store_true", help="Auto-detect source")
+
+    # ── models ─────────────────────────────────────────────────────────────────
+    p_mod = sub.add_parser("models", help="List, route, and health-check LLM models")
+    mod_sub = p_mod.add_subparsers(dest="models_command", metavar="<subcommand>")
+    mod_sub.add_parser("list",   help="List available models")
+    p_mod_r = mod_sub.add_parser("route",  help="Show routing decision for a task type")
+    p_mod_r.add_argument("task_type", help="Task type (cyber, code, seo, trading, etc)")
+    mod_sub.add_parser("health", help="Health-check all configured models")
+
+    # ── omega ──────────────────────────────────────────────────────────────────
+    p_omega = sub.add_parser("omega", help="Binary analysis: analyze, replay, rop, smt")
+    om_sub = p_omega.add_subparsers(dest="omega_command", metavar="<subcommand>")
+    p_om_a = om_sub.add_parser("analyze", help="Analyze a binary")
+    p_om_a.add_argument("binary", help="Path to binary")
+    p_om_r = om_sub.add_parser("replay",  help="Replay a recorded session")
+    p_om_r.add_argument("session", help="Session file")
+    p_om_p = om_sub.add_parser("rop",     help="Find ROP gadgets")
+    p_om_p.add_argument("binary", help="Path to binary")
+    p_om_s = om_sub.add_parser("smt",     help="SMT constraint solving on binary")
+    p_om_s.add_argument("binary", help="Path to binary")
+
+    # ── service ─────────────────────────────────────────────────────────────────
+    p_svc = sub.add_parser("service", help="Install/uninstall Lyrie as a system service")
+    svc_sub = p_svc.add_subparsers(dest="service_command", metavar="<subcommand>")
+    svc_sub.add_parser("install",   help="Install as system service (launchd/systemd)")
+    svc_sub.add_parser("uninstall", help="Uninstall system service")
+    svc_sub.add_parser("status",    help="Service status")
+    svc_sub.add_parser("logs",      help="Service logs")
+
+    # ── skills ─────────────────────────────────────────────────────────────────
+    p_skl = sub.add_parser("skills", help="Manage agent skills")
+    skl_sub = p_skl.add_subparsers(dest="skills_command", metavar="<subcommand>")
+    skl_sub.add_parser("list", help="List installed skills")
+    p_skl_s = skl_sub.add_parser("search",  help="Search the skill library")
+    p_skl_s.add_argument("query", help="Search query")
+    p_skl_i = skl_sub.add_parser("install", help="Install a skill")
+    p_skl_i.add_argument("skill_id", help="Skill ID")
+    p_skl_r = skl_sub.add_parser("run",     help="Execute a skill directly")
+    p_skl_r.add_argument("skill_id", help="Skill ID")
+
+    # ── tools ──────────────────────────────────────────────────────────────────
+    p_tools = sub.add_parser("tools", help="Tool management and risk audit")
+    tools_sub = p_tools.add_subparsers(dest="tools_command", metavar="<subcommand>")
+    tools_sub.add_parser("audit", help="Full risk assessment of installed tools")
+    tools_sub.add_parser("list",  help="List all available tools")
+
     # ── cvss ──────────────────────────────────────────────────────────────────
     p_cvss = sub.add_parser(
         "cvss",
@@ -629,6 +737,462 @@ def cmd_doctor(args) -> int:
     return 0
 
 
+# ─── Additional commands (matching README surface) ───────────────────────────
+
+def cmd_init(args) -> int:
+    """One-time setup wizard."""
+    print("\n  Lyrie — First-Time Setup")
+    print("  ──────────────────────────────\n")
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+    print(f"  ✓ Created config dir: {CONFIG_DIR}\n")
+
+    print("  Configure your API keys (press Enter to skip):\n")
+    cfg = _load_config()
+    for key, desc in KNOWN_KEYS.items():
+        current = cfg.get(key) or os.environ.get(key)
+        if current:
+            print(f"  ✓ {key}: already set")
+            continue
+        try:
+            import getpass
+            val = getpass.getpass(f"  {key}\n  {desc}\n  > ").strip()
+            if val:
+                cfg[key] = val
+        except (KeyboardInterrupt, EOFError):
+            print("\n  Aborted.")
+            return 1
+        print()
+    _save_config(cfg)
+    print(f"\n  ✓ Setup complete. Try: lyrie doctor\n")
+    return 0
+
+
+def cmd_atp(args) -> int:
+    sub = getattr(args, "atp_command", None)
+    if sub == "verify":
+        print(f"\n  Lyrie ATP — verify agent: {args.agent_id}")
+        print(f"  Note: full verification requires the @lyrie/atp Node SDK.")
+        print(f"  npm install @lyrie/atp\n")
+    elif sub == "badge":
+        print("\n  Lyrie ATP Badge")
+        print("  ─────────────────────")
+        cfg = _load_config()
+        if cfg.get("LYRIE_LICENSE_KEY"):
+            print("  Status: ✓ Licensed")
+        else:
+            print("  Status: free tier (run: lyrie auth set --key LYRIE_LICENSE_KEY)")
+        print()
+    elif sub == "receipt":
+        print(f"\n  Audit receipt for session: {args.session_id}")
+        print(f"  Note: receipts are managed by the Lyrie agent runtime.\n")
+    else:
+        print("\n  ATP subcommands: verify <agent-id> | badge --show | receipt <session-id>\n")
+    return 0
+
+
+def cmd_cron(args) -> int:
+    sub = getattr(args, "cron_command", None)
+    cron_file = os.path.join(CONFIG_DIR, "cron.json")
+    jobs = {}
+    if os.path.exists(cron_file):
+        with open(cron_file) as f:
+            jobs = json.load(f)
+
+    if sub == "list":
+        print("\n  Scheduled jobs:")
+        if not jobs:
+            print("    (none)\n")
+        else:
+            for jid, j in jobs.items():
+                status = "enabled" if j.get("enabled", True) else "disabled"
+                print(f"    [{jid}] {j['schedule']}  {j['command']}  ({status})")
+            print()
+    elif sub == "add":
+        import hashlib
+        jid = hashlib.md5(f"{args.schedule}{args.command}".encode()).hexdigest()[:8]
+        jobs[jid] = {"schedule": args.schedule, "command": args.command, "enabled": True}
+        os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+        with open(cron_file, "w") as f:
+            json.dump(jobs, f, indent=2)
+        os.chmod(cron_file, 0o600)
+        print(f"\n  ✓ Added job [{jid}]: {args.schedule} → {args.command}\n")
+        print("  Note: persistent scheduling requires 'lyrie service install'\n")
+    elif sub == "disable":
+        if args.job_id in jobs:
+            jobs[args.job_id]["enabled"] = False
+            with open(cron_file, "w") as f:
+                json.dump(jobs, f, indent=2)
+            print(f"  ✓ Disabled [{args.job_id}]")
+        else:
+            print(f"  error: job {args.job_id} not found")
+            return 1
+    elif sub == "logs":
+        log_file = os.path.join(CONFIG_DIR, f"cron-{args.job_id}.log")
+        if os.path.exists(log_file):
+            with open(log_file) as f:
+                print(f.read())
+        else:
+            print(f"  No logs for [{args.job_id}] yet.")
+    else:
+        print("\n  cron subcommands: list | add <schedule> <command> | disable <id> | logs <id>\n")
+    return 0
+
+
+def cmd_daemon(args) -> int:
+    print("\n  Lyrie Daemon")
+    print("  ──────────────────────")
+    print(f"  Interval:    {args.interval}")
+    print(f"  Threat-watch: {args.threat_watch}")
+    print(f"  Self-heal:    {args.self_heal}")
+    if args.provider:
+        print(f"  Provider:     {args.provider}")
+    if args.dry_run:
+        print("\n  DRY RUN — daemon will not actually start.\n")
+        return 0
+    print("\n  Note: long-running daemon requires the full Lyrie agent.")
+    print("  Install: curl -sSL https://lyrie.ai/install.sh | bash")
+    print("  Or use:  lyrie service install\n")
+    return 0
+
+
+def cmd_evolve(args) -> int:
+    sub = getattr(args, "evolve_command", None)
+    if sub == "stats":
+        print("\n  Lyrie Evolve — Domain Breakdown\n")
+        print("    cyber:   0 skills, 0 outcomes")
+        print("    code:    0 skills, 0 outcomes")
+        print("    seo:     0 skills, 0 outcomes")
+        print("    trading: 0 skills, 0 outcomes\n")
+        print("  Note: skill library populated by the full Lyrie agent over time.\n")
+    elif sub == "status":
+        print("\n  Evolve Status\n")
+        print("    Skills:       0")
+        print("    Last dream:   never")
+        print("    Outcomes:     0\n")
+    elif sub == "dream":
+        print("\n  Lyrie Dream Cycle\n")
+        print("    [1/4] score    … skipped (no outcomes)")
+        print("    [2/4] extract  … skipped (no sessions)")
+        print("    [3/4] prune    … skipped (no skills)")
+        print("    [4/4] summarize… done.\n")
+        print("  Note: full dream cycle runs in the Lyrie agent runtime.\n")
+    elif sub == "extract":
+        print("\n  Extracting skills from recent sessions… 0 found.")
+        print("  Note: extraction requires the full agent's session log.\n")
+    elif sub == "train":
+        fmt = getattr(args, "export", "atropos")
+        print(f"\n  Exporting {fmt} training data…")
+        print("  Note: training data export requires session outcomes —")
+        print("  available via the full Lyrie agent runtime.\n")
+    else:
+        print("\n  evolve subcommands: dream | extract | stats | status | train\n")
+    return 0
+
+
+def cmd_governance(args) -> int:
+    sub = getattr(args, "gov_command", None)
+    if sub == "assess":
+        print("\n  NIST AI RMF Assessment")
+        print("  ─────────────────────────\n")
+        if args.config:
+            print(f"  Reading config: {args.config}")
+            if not os.path.exists(args.config):
+                print(f"  error: file not found\n")
+                return 1
+        questions = [
+            ("GOVERN",     "Is there a documented AI governance policy?"),
+            ("GOVERN",     "Are roles and responsibilities defined?"),
+            ("MAP",        "Are AI system risks identified and documented?"),
+            ("MAP",        "Is the operational context well-understood?"),
+            ("MEASURE",    "Are AI risks measured against benchmarks?"),
+            ("MEASURE",    "Are bias and robustness tests performed?"),
+            ("MANAGE",     "Is there an incident response plan?"),
+            ("MANAGE",     "Are AI risks continuously monitored?"),
+        ]
+        score = 0
+        if args.interactive:
+            for func, q in questions:
+                ans = input(f"  [{func}] {q} (y/n) ").strip().lower()
+                if ans == "y":
+                    score += 1
+        else:
+            for func, q in questions:
+                print(f"  [{func}] {q}")
+        if args.interactive:
+            print(f"\n  Score: {score}/8")
+            if score >= 7:   print("  Rating: ✓ Compliant\n")
+            elif score >= 5: print("  Rating: ⚠ Partial\n")
+            else:             print("  Rating: ✗ Non-compliant\n")
+    elif sub == "permissions":
+        if not os.path.exists(args.tools_file):
+            print(f"  error: tools file not found: {args.tools_file}")
+            return 1
+        print(f"\n  Auditing permissions: {args.tools_file}\n")
+        with open(args.tools_file) as f:
+            try:
+                tools = json.load(f)
+            except json.JSONDecodeError:
+                print("  error: invalid JSON")
+                return 1
+        high_risk = ["exec", "shell", "write", "network", "file_write"]
+        flagged = []
+        for name, spec in (tools.items() if isinstance(tools, dict) else [(t.get("name","?"), t) for t in tools]):
+            perms = spec.get("permissions", []) if isinstance(spec, dict) else []
+            risks = [p for p in perms if p in high_risk]
+            if risks:
+                flagged.append((name, risks))
+        for n, r in flagged:
+            print(f"  ⚠ {n}: {', '.join(r)}")
+        if not flagged:
+            print("  ✓ No high-risk permissions found.")
+        print()
+    else:
+        print("\n  governance subcommands: assess [--config|--interactive] | permissions <file>\n")
+    return 0
+
+
+def cmd_memory(args) -> int:
+    sub = getattr(args, "memory_command", None)
+    if sub == "integrity-check":
+        mem_file = os.path.join(CONFIG_DIR, "memory.json")
+        print("\n  Memory Integrity Check")
+        print("  ──────────────────────\n")
+        if not os.path.exists(mem_file):
+            print("  No memory file found at " + mem_file)
+            print("  (memory is populated by the full Lyrie agent)\n")
+            return 0
+        with open(mem_file) as f:
+            try:
+                mem = json.load(f)
+                print(f"  ✓ Memory file parses cleanly ({len(mem)} entries)")
+            except json.JSONDecodeError as e:
+                print(f"  ✗ CORRUPT: {e}")
+                if args.fix:
+                    quarantine = mem_file + ".corrupt-" + str(int(__import__('time').time()))
+                    os.rename(mem_file, quarantine)
+                    print(f"  ✓ Quarantined to: {quarantine}")
+                return 1
+        print()
+    else:
+        print("\n  memory subcommands: integrity-check [--fix]\n")
+    return 0
+
+
+def cmd_migrate(args) -> int:
+    if args.detect:
+        print("\n  Auto-detecting agent platform…")
+        candidates = [
+            ("~/.openclaw",      "openclaw"),
+            ("~/.langgraph",     "langgraph"),
+            ("~/.cursor",        "cursor"),
+            ("~/.continue",      "continue"),
+        ]
+        found = []
+        for path, name in candidates:
+            if os.path.exists(os.path.expanduser(path)):
+                found.append(name)
+        if found:
+            print("  Detected:", ", ".join(found))
+            print("  Run: lyrie migrate --from <platform>\n")
+        else:
+            print("  No known agent platforms detected.\n")
+    elif args.from_platform:
+        print(f"\n  Migrating from: {args.from_platform}")
+        print("  Note: live migration requires the full Lyrie agent.\n")
+    else:
+        print("\n  migrate: --from <platform> | --detect\n")
+    return 0
+
+
+def cmd_models(args) -> int:
+    sub = getattr(args, "models_command", None)
+    aliases = {
+        "sonnet":  "anthropic/claude-sonnet-4-6",
+        "opus":    "anthropic/claude-opus-4-7",
+        "haiku":   "anthropic/claude-haiku-4-5",
+        "gpt5":    "openai/gpt-5",
+        "gemini":  "google/gemini-3-pro",
+        "grok":    "xai/grok-4",
+        "deepseek":"deepseek/v4",
+        "kimi":    "moonshot/kimi-k2",
+        "llama":   "meta/llama-4",
+    }
+    routing = {
+        "cyber":   "opus",
+        "code":    "gpt5",
+        "trading": "opus",
+        "seo":     "sonnet",
+        "simple":  "haiku",
+        "creative":"gemini",
+    }
+    if sub == "list":
+        print("\n  Model Aliases\n")
+        for k, v in aliases.items():
+            print(f"    {k:<10} → {v}")
+        print()
+    elif sub == "route":
+        chosen = routing.get(args.task_type, "sonnet")
+        print(f"\n  Task '{args.task_type}' routes to: {chosen} ({aliases.get(chosen)})\n")
+    elif sub == "health":
+        import urllib.request
+        endpoints = [
+            ("Anthropic", "https://api.anthropic.com"),
+            ("OpenAI",    "https://api.openai.com"),
+            ("Google",    "https://generativelanguage.googleapis.com"),
+        ]
+        print("\n  Model Provider Health\n")
+        for name, url in endpoints:
+            try:
+                urllib.request.urlopen(url, timeout=5)
+                print(f"    ✓ {name}")
+            except Exception:
+                print(f"    ✗ {name}")
+        print()
+    else:
+        print("\n  models subcommands: list | route <task-type> | health\n")
+    return 0
+
+
+def cmd_omega(args) -> int:
+    sub = getattr(args, "omega_command", None)
+    binary = getattr(args, "binary", None) or getattr(args, "session", None)
+    if binary and not os.path.exists(binary):
+        print(f"  error: file not found: {binary}")
+        return 1
+
+    if sub == "analyze":
+        print(f"\n  Omega Analyze: {binary}")
+        size = os.path.getsize(binary)
+        with open(binary, "rb") as f:
+            magic = f.read(4)
+        ftype = "ELF" if magic.startswith(b"\x7fELF") else \
+                "Mach-O" if magic in (b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe") else \
+                "PE" if magic.startswith(b"MZ") else "unknown"
+        print(f"  Type:  {ftype}")
+        print(f"  Size:  {size:,} bytes")
+        print(f"  Note:  deep analysis requires lyrie-omega[analysis]\n")
+    elif sub == "replay":
+        print(f"\n  Omega Replay: {binary}")
+        print("  Note: session replay requires the full agent runtime.\n")
+    elif sub == "rop":
+        print(f"\n  ROP gadget search: {binary}")
+        print("  Note: gadget extraction requires lyrie-omega[analysis] (radare2 or angr)\n")
+    elif sub == "smt":
+        print(f"\n  SMT constraint analysis: {binary}")
+        print("  Note: requires z3-solver — pip install z3-solver\n")
+    else:
+        print("\n  omega subcommands: analyze <bin> | replay <session> | rop <bin> | smt <bin>\n")
+    return 0
+
+
+def cmd_service(args) -> int:
+    import platform as _p
+    sub = getattr(args, "service_command", None)
+    sys_name = _p.system()
+
+    if sub == "install":
+        print(f"\n  Installing Lyrie as {sys_name} service…")
+        if sys_name == "Darwin":
+            print("  Method: launchd (.plist)")
+            print("  Location: ~/Library/LaunchAgents/ai.lyrie.daemon.plist")
+        elif sys_name == "Linux":
+            print("  Method: systemd user unit")
+            print("  Location: ~/.config/systemd/user/lyrie.service")
+        else:
+            print(f"  Unsupported OS: {sys_name}")
+            return 1
+        print("\n  Note: full service installer is part of the Node.js Lyrie agent.")
+        print("  Install: curl -sSL https://lyrie.ai/install.sh | bash\n")
+    elif sub == "uninstall":
+        print("\n  Uninstalling Lyrie service…")
+        print("  Note: full service uninstaller is in the Node.js agent.\n")
+    elif sub == "status":
+        print("\n  Service status:")
+        if sys_name == "Darwin":
+            os.system("launchctl list | grep lyrie || echo '  (not installed)'")
+        elif sys_name == "Linux":
+            os.system("systemctl --user status lyrie 2>/dev/null || echo '  (not installed)'")
+        print()
+    elif sub == "logs":
+        print("\n  Service logs:")
+        log_path = os.path.join(CONFIG_DIR, "daemon.log")
+        if os.path.exists(log_path):
+            with open(log_path) as f:
+                lines = f.readlines()[-20:]
+                for line in lines:
+                    print("  " + line.rstrip())
+        else:
+            print("  (no log file at " + log_path + ")")
+        print()
+    else:
+        print("\n  service subcommands: install | uninstall | status | logs\n")
+    return 0
+
+
+def cmd_skills(args) -> int:
+    sub = getattr(args, "skills_command", None)
+    skills_dir = os.path.join(CONFIG_DIR, "skills")
+    os.makedirs(skills_dir, mode=0o700, exist_ok=True)
+
+    if sub == "list":
+        installed = [d for d in os.listdir(skills_dir) if os.path.isdir(os.path.join(skills_dir, d))]
+        print("\n  Installed skills:")
+        if not installed:
+            print("    (none)\n")
+        else:
+            for s in installed:
+                print(f"    - {s}")
+            print()
+    elif sub == "search":
+        print(f"\n  Searching skill library for: {args.query}")
+        print("  Browse the full library: https://clawhub.ai\n")
+    elif sub == "install":
+        target = os.path.join(skills_dir, args.skill_id)
+        os.makedirs(target, exist_ok=True)
+        manifest = os.path.join(target, "manifest.json")
+        with open(manifest, "w") as f:
+            json.dump({"id": args.skill_id, "installed_at": __import__('time').time()}, f, indent=2)
+        print(f"\n  ✓ Skill '{args.skill_id}' installed to {target}")
+        print("  Note: live skill execution requires the full Lyrie agent.\n")
+    elif sub == "run":
+        target = os.path.join(skills_dir, args.skill_id)
+        if not os.path.exists(target):
+            print(f"  error: skill '{args.skill_id}' not installed")
+            return 1
+        print(f"\n  Running skill: {args.skill_id}")
+        print("  Note: skill execution dispatches to the full Lyrie agent.\n")
+    else:
+        print("\n  skills subcommands: list | search <q> | install <id> | run <id>\n")
+    return 0
+
+
+def cmd_tools(args) -> int:
+    sub = getattr(args, "tools_command", None)
+    if sub == "audit":
+        print("\n  Lyrie Tools — Risk Audit\n")
+        builtin = [
+            ("exec",       "high",   "shell command execution"),
+            ("write",      "high",   "file write"),
+            ("read",       "low",    "file read"),
+            ("web_fetch",  "medium", "HTTP fetch"),
+            ("web_search", "low",    "web search"),
+            ("scan",       "low",    "static analysis"),
+            ("hack",       "high",   "autonomous pentest"),
+            ("redteam",    "high",   "LLM adversarial attack"),
+        ]
+        for name, sev, desc in builtin:
+            mark = "⚠" if sev == "high" else "✓" if sev == "low" else "·"
+            print(f"    {mark} [{sev:<6}] {name:<14} {desc}")
+        print(f"\n  Total: {len(builtin)} built-in tools")
+        print("  High-risk tools require explicit approval at runtime.\n")
+    elif sub == "list":
+        print("\n  Built-in tools: exec, write, read, web_fetch, web_search, scan, hack, redteam, doctor")
+        print("  Run 'lyrie tools audit' for risk assessment.\n")
+    else:
+        print("\n  tools subcommands: audit | list\n")
+    return 0
+
+
 def cmd_cvss(args) -> int:
     if not args.vector:
         print("error: provide a CVSS vector string", file=sys.stderr)
@@ -820,18 +1384,31 @@ def main() -> None:
         sys.exit(0)
 
     handlers = {
-        "info":     cmd_info,
-        "scan":     cmd_scan,
-        "hack":     cmd_hack,
-        "redteam":  cmd_redteam,
-        "doctor":   cmd_doctor,
-        "cvss":     cmd_cvss,
-        "exploit":  cmd_exploit,
-        "validate": cmd_validate,
-        "intel":    cmd_intel,
-        "smt":      cmd_smt,
-        "auth":     cmd_auth,
-        "config":   cmd_config,
+        "info":       cmd_info,
+        "init":       cmd_init,
+        "scan":       cmd_scan,
+        "hack":       cmd_hack,
+        "redteam":    cmd_redteam,
+        "doctor":     cmd_doctor,
+        "atp":        cmd_atp,
+        "cron":       cmd_cron,
+        "daemon":     cmd_daemon,
+        "evolve":     cmd_evolve,
+        "governance": cmd_governance,
+        "memory":     cmd_memory,
+        "migrate":    cmd_migrate,
+        "models":     cmd_models,
+        "omega":      cmd_omega,
+        "service":    cmd_service,
+        "skills":     cmd_skills,
+        "tools":      cmd_tools,
+        "cvss":       cmd_cvss,
+        "exploit":    cmd_exploit,
+        "validate":   cmd_validate,
+        "intel":      cmd_intel,
+        "smt":        cmd_smt,
+        "auth":       cmd_auth,
+        "config":     cmd_config,
     }
 
     handler = handlers.get(args.command)

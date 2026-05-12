@@ -5,7 +5,7 @@ Lyrie.ai | OTT Cybersecurity LLC
 https://lyrie.ai
 """
 
-__version__ = "1.0.6"
+__version__ = "1.0.7"
 __author__ = "OTT Cybersecurity LLC"
 __email__ = "dev@lyrie.ai"
 __license__ = "MIT"
