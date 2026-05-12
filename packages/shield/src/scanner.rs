@@ -3,8 +3,21 @@
 //! v1.0.0 GA: hash-based signature matching, heuristic analysis, LyrieRules engine.
 
 use crate::ThreatReport;
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use sha2::{Digest, Sha256};
 use std::path::Path;
+
+// ──────────────────────────────────────────────
+//  Constants
+// ──────────────────────────────────────────────
+
+/// Maximum file size the scanner will read into memory: 256 MiB.
+/// Files larger than this are skipped to prevent DoS.
+pub const MAX_FILE_SIZE: u64 = 256 * 1024 * 1024;
+
+/// Filesystem paths that must never be scanned (kernel/device virtual filesystems).
+/// Attempting to read from these can block indefinitely or produce garbage.
+static BLOCKED_PATH_PREFIXES: &[&str] = &["/proc", "/dev", "/sys"];
 
 // ──────────────────────────────────────────────
 //  Hash-based signature matching
@@ -51,16 +64,22 @@ static KNOWN_MALWARE_HASHES: &[(&str, &str)] = &[
     ),
 ];
 
-/// Read a file and compute its SHA-256 digest, returning the lowercase hex string.
-fn sha256_of_file(path: &Path) -> std::io::Result<String> {
-    let data = std::fs::read(path)?;
-    let digest = Sha256::digest(&data);
-    Ok(hex::encode(digest))
+/// Compute the SHA-256 of a byte slice and return the lowercase hex string.
+fn sha256_of_bytes(data: &[u8]) -> String {
+    let digest = Sha256::digest(data);
+    hex::encode(digest)
 }
 
-/// Scan a file's hash against the known-malware signature database.
-pub fn scan_file_hash(path: &Path) -> Option<SignatureMatch> {
-    let hash = sha256_of_file(path).ok()?;
+/// Legacy path-based helper retained for public API compatibility.
+/// Prefer the internal byte-based path for new code.
+pub fn sha256_of_file(path: &Path) -> std::io::Result<String> {
+    let data = std::fs::read(path)?;
+    Ok(sha256_of_bytes(&data))
+}
+
+/// Scan a byte slice's hash against the known-malware signature database.
+fn check_hash(data: &[u8]) -> Option<SignatureMatch> {
+    let hash = sha256_of_bytes(data);
     for &(sig, name) in KNOWN_MALWARE_HASHES {
         if hash.eq_ignore_ascii_case(sig) {
             return Some(SignatureMatch {
@@ -70,6 +89,18 @@ pub fn scan_file_hash(path: &Path) -> Option<SignatureMatch> {
         }
     }
     None
+}
+
+/// Public legacy API: scan a file path against hash signatures.
+pub fn scan_file_hash(path: &Path) -> Option<SignatureMatch> {
+    // Honour MAX_FILE_SIZE
+    if let Ok(meta) = std::fs::metadata(path) {
+        if meta.len() > MAX_FILE_SIZE {
+            return None;
+        }
+    }
+    let data = std::fs::read(path).ok()?;
+    check_hash(&data)
 }
 
 // ──────────────────────────────────────────────
@@ -102,7 +133,7 @@ fn shannon_entropy(data: &[u8]) -> f64 {
         .sum()
 }
 
-/// Check for known malicious string patterns inside a file's content.
+/// Known malicious string patterns (case-insensitive, matched with AhoCorasick).
 static MALICIOUS_STRINGS: &[(&str, &str)] = &[
     ("eval(base64_decode", "PHP eval+base64 webshell pattern"),
     ("eval(gzinflate(base64_decode", "PHP gzip-obfuscated webshell"),
@@ -122,12 +153,23 @@ static MALICIOUS_STRINGS: &[(&str, &str)] = &[
     ("strrev(str_rot13(", "PHP string obfuscation chain"),
 ];
 
-/// Run heuristic checks on a file and return any flags raised.
-pub fn scan_heuristic(path: &Path) -> Vec<HeuristicFlag> {
+/// Build a case-insensitive AhoCorasick automaton for all MALICIOUS_STRINGS patterns.
+fn build_malicious_ac() -> AhoCorasick {
+    let patterns: Vec<&str> = MALICIOUS_STRINGS.iter().map(|(p, _)| *p).collect();
+    AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .match_kind(MatchKind::LeftmostFirst)
+        .build(patterns)
+        .expect("AhoCorasick build should not fail for static patterns")
+}
+
+/// Run heuristic checks on pre-read file content.
+/// `path` is still needed for metadata-based checks (permissions, extension, etc.).
+pub fn scan_heuristic_with_content(path: &Path, content: &[u8]) -> Vec<HeuristicFlag> {
     let mut flags: Vec<HeuristicFlag> = Vec::new();
+    let path_str = path.to_string_lossy();
 
     // ── 1. Suspicious extension in wrong location ──────────────────────────
-    let path_str = path.to_string_lossy();
     let suspicious_in_tmp = [".exe", ".dll", ".bat", ".cmd"];
     for ext in &suspicious_in_tmp {
         if path_str.to_lowercase().ends_with(ext)
@@ -143,14 +185,13 @@ pub fn scan_heuristic(path: &Path) -> Vec<HeuristicFlag> {
         }
     }
 
-    // ── 2. .sh file with world-writable/executable perms ──────────────────
+    // ── 2. .sh file with world-writable perms ─────────────────────────────
     #[cfg(unix)]
     if path_str.ends_with(".sh") {
         use std::os::unix::fs::PermissionsExt;
         if let Ok(meta) = std::fs::metadata(path) {
             let mode = meta.permissions().mode();
             if mode & 0o002 != 0 {
-                // world-writable
                 flags.push(HeuristicFlag {
                     rule_id: "H_WORLD_WRITABLE_SCRIPT",
                     description: "Shell script is world-writable (mode & 002)".to_string(),
@@ -159,14 +200,12 @@ pub fn scan_heuristic(path: &Path) -> Vec<HeuristicFlag> {
         }
     }
 
-    // Read file content for remaining checks (skip if unreadable)
-    let content = match std::fs::read(path) {
-        Ok(c) => c,
-        Err(_) => return flags,
-    };
+    if content.is_empty() {
+        return flags;
+    }
 
-    // ── 3. High entropy — packed or encrypted content ─────────────────────
-    let entropy = shannon_entropy(&content);
+    // ── 3. High entropy ────────────────────────────────────────────────────
+    let entropy = shannon_entropy(content);
     if entropy > 7.5 {
         flags.push(HeuristicFlag {
             rule_id: "H_HIGH_ENTROPY",
@@ -177,34 +216,35 @@ pub fn scan_heuristic(path: &Path) -> Vec<HeuristicFlag> {
         });
     }
 
-    // ── 4. Known malicious strings ─────────────────────────────────────────
-    let content_lossy = String::from_utf8_lossy(&content);
-    let content_lower = content_lossy.to_lowercase();
-    for &(pattern, desc) in MALICIOUS_STRINGS {
-        if content_lower.contains(&pattern.to_lowercase()) {
-            flags.push(HeuristicFlag {
-                rule_id: "H_MALICIOUS_STRING",
-                description: format!("Detected pattern '{}': {}", pattern, desc),
-            });
-        }
+    // ── 4. Known malicious strings (AhoCorasick, single pass) ─────────────
+    let ac = build_malicious_ac();
+    let mut matched_indices: Vec<usize> = ac
+        .find_iter(content)
+        .map(|m| m.pattern().as_usize())
+        .collect();
+    matched_indices.sort_unstable();
+    matched_indices.dedup();
+    for idx in matched_indices {
+        let (pattern, desc) = MALICIOUS_STRINGS[idx];
+        flags.push(HeuristicFlag {
+            rule_id: "H_MALICIOUS_STRING",
+            description: format!("Detected pattern '{}': {}", pattern, desc),
+        });
     }
 
-    // ── 5. Executable bit set on non-binary files ─────────────────────────
+    // ── 5. Executable bit on non-binary files ─────────────────────────────
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         if let Ok(meta) = std::fs::metadata(path) {
             let mode = meta.permissions().mode();
             let is_exec = mode & 0o111 != 0;
-            // "Non-binary" heuristic: starts with a text shebang or is a common script ext
             let looks_like_script = content.starts_with(b"#!")
                 || path_str.ends_with(".py")
                 || path_str.ends_with(".rb")
                 || path_str.ends_with(".pl")
                 || path_str.ends_with(".php");
-            // Raise only when executable but doesn't look intentionally scripted
             if is_exec && !looks_like_script && !content.is_empty() {
-                // Check for ELF/Mach-O magic — actual binaries are OK
                 let is_elf = content.starts_with(b"\x7fELF");
                 let is_macho = content.starts_with(b"\xfe\xed\xfa")
                     || content.starts_with(b"\xce\xfa\xed\xfe")
@@ -222,6 +262,15 @@ pub fn scan_heuristic(path: &Path) -> Vec<HeuristicFlag> {
     }
 
     flags
+}
+
+/// Public legacy API: scan a file path for heuristic flags.
+pub fn scan_heuristic(path: &Path) -> Vec<HeuristicFlag> {
+    let content = match std::fs::read(path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    scan_heuristic_with_content(path, &content)
 }
 
 // ──────────────────────────────────────────────
@@ -245,20 +294,26 @@ pub struct LyrieRule {
     pub condition: RuleCondition,
 }
 
-/// Test whether `rule` matches `content`.
+/// Test whether `rule` matches `content` using AhoCorasick.
 pub fn apply_rule(rule: &LyrieRule, content: &[u8]) -> bool {
     if rule.strings.is_empty() {
         return false;
     }
+    let ac = AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .match_kind(MatchKind::LeftmostFirst)
+        .build(&rule.strings)
+        .expect("AhoCorasick build should not fail");
+
     match rule.condition {
-        RuleCondition::Any => rule
-            .strings
-            .iter()
-            .any(|s| contains_bytes(content, s.as_bytes())),
-        RuleCondition::All => rule
-            .strings
-            .iter()
-            .all(|s| contains_bytes(content, s.as_bytes())),
+        RuleCondition::Any => ac.is_match(content),
+        RuleCondition::All => {
+            let mut found = vec![false; rule.strings.len()];
+            for m in ac.find_iter(content) {
+                found[m.pattern().as_usize()] = true;
+            }
+            found.iter().all(|&f| f)
+        }
     }
 }
 
@@ -269,17 +324,6 @@ pub fn apply_rules(rules: &[LyrieRule], content: &[u8]) -> Vec<String> {
         .filter(|r| apply_rule(r, content))
         .map(|r| r.name.clone())
         .collect()
-}
-
-/// Case-insensitive substring search over raw bytes.
-fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-    let needle_lower: Vec<u8> = needle.iter().map(|b| b.to_ascii_lowercase()).collect();
-    haystack
-        .windows(needle.len())
-        .any(|w| w.iter().map(|b| b.to_ascii_lowercase()).collect::<Vec<_>>() == needle_lower)
 }
 
 /// Return the five built-in LyrieRules covering common threat categories.
@@ -347,7 +391,7 @@ pub fn builtin_rules() -> Vec<LyrieRule> {
 }
 
 // ──────────────────────────────────────────────
-//  Scanner struct (updated)
+//  Scanner struct
 // ──────────────────────────────────────────────
 
 pub struct Scanner {
@@ -372,9 +416,10 @@ impl Scanner {
         self.rules.push(rule);
     }
 
-    /// Full-pipeline scan: extension check → hash signature → heuristics → LyrieRules.
+    /// Full-pipeline scan: extension check → special path guard → single file read →
+    /// hash signature → heuristics → LyrieRules.
     pub fn scan_file(&self, path: &str) -> ThreatReport {
-        // ── Extension check (preserved from v0.1) ──────────────────────────
+        // ── Extension check ────────────────────────────────────────────────
         let dangerous_extensions = [".exe", ".bat", ".cmd", ".ps1", ".vbs", ".js.download"];
         for ext in &dangerous_extensions {
             if path.to_lowercase().ends_with(ext) {
@@ -386,10 +431,77 @@ impl Scanner {
             }
         }
 
+        // ── Block kernel / device virtual filesystem paths ─────────────────
+        for prefix in BLOCKED_PATH_PREFIXES {
+            // Match /proc, /proc/, /proc/something — but not /processor etc.
+            if path == *prefix
+                || path.starts_with(&format!("{}/", prefix))
+            {
+                return ThreatReport {
+                    blocked: false,
+                    severity: crate::Severity::None,
+                    threat_type: Some("special_path_skipped".to_string()),
+                    description: Some(format!(
+                        "Path '{}' is inside a virtual/device filesystem ({}) — scan skipped",
+                        path, prefix
+                    )),
+                    file_path: Some(path.to_string()),
+                    timestamp: {
+                        format!(
+                            "{}",
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs()
+                        )
+                    },
+                    action_taken: None,
+                };
+            }
+        }
+
         let p = Path::new(path);
 
+        // ── File size check before reading ─────────────────────────────────
+        if let Ok(meta) = std::fs::metadata(p) {
+            if meta.len() > MAX_FILE_SIZE {
+                return ThreatReport::threat(
+                    crate::Severity::Low,
+                    "file_too_large",
+                    &format!(
+                        "File size {} bytes exceeds MAX_FILE_SIZE ({} bytes) — scan skipped",
+                        meta.len(),
+                        MAX_FILE_SIZE
+                    ),
+                );
+            }
+        }
+
+        // ── Single unified file read ───────────────────────────────────────
+        let content = match std::fs::read(p) {
+            Ok(c) => c,
+            Err(e) => {
+                // Unreadable file — return clean (we cannot make a determination)
+                return ThreatReport {
+                    blocked: false,
+                    severity: crate::Severity::None,
+                    threat_type: Some("read_error".to_string()),
+                    description: Some(format!("Could not read file: {}", e)),
+                    file_path: Some(path.to_string()),
+                    timestamp: format!(
+                        "{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                    ),
+                    action_taken: None,
+                };
+            }
+        };
+
         // ── Hash-based signature matching ──────────────────────────────────
-        if let Some(sig) = scan_file_hash(p) {
+        if let Some(sig) = check_hash(&content) {
             return ThreatReport::threat(
                 crate::Severity::Critical,
                 "known_malware_hash",
@@ -401,8 +513,8 @@ impl Scanner {
             );
         }
 
-        // ── Heuristic analysis ─────────────────────────────────────────────
-        let hflags = scan_heuristic(p);
+        // ── Heuristic analysis (uses pre-read content) ─────────────────────
+        let hflags = scan_heuristic_with_content(p, &content);
         if !hflags.is_empty() {
             let desc = hflags
                 .iter()
@@ -416,16 +528,14 @@ impl Scanner {
             );
         }
 
-        // ── LyrieRules engine ──────────────────────────────────────────────
-        if let Ok(content) = std::fs::read(p) {
-            let matched = apply_rules(&self.rules, &content);
-            if !matched.is_empty() {
-                return ThreatReport::threat(
-                    crate::Severity::High,
-                    "lyrie_rule_match",
-                    &format!("Matched rules: {}", matched.join(", ")),
-                );
-            }
+        // ── LyrieRules engine (uses same content) ──────────────────────────
+        let matched = apply_rules(&self.rules, &content);
+        if !matched.is_empty() {
+            return ThreatReport::threat(
+                crate::Severity::High,
+                "lyrie_rule_match",
+                &format!("Matched rules: {}", matched.join(", ")),
+            );
         }
 
         ThreatReport::clean()
@@ -446,14 +556,12 @@ mod tests {
 
     #[test]
     fn entropy_uniform() {
-        // All-zero bytes → entropy = 0
         let data = vec![0u8; 1000];
         assert!(shannon_entropy(&data) < 0.001);
     }
 
     #[test]
     fn entropy_high_random() {
-        // Pseudo-random bytes should have high entropy
         let data: Vec<u8> = (0u8..=255).cycle().take(2048).collect();
         let e = shannon_entropy(&data);
         assert!(e > 7.9, "expected high entropy, got {}", e);
@@ -494,6 +602,53 @@ mod tests {
         let content = b"connecting to stratum+tcp://pool.example.com:3333";
         let matched = apply_rules(&rules, content);
         assert!(matched.contains(&"LR_CRYPTO_MINER".to_string()));
+    }
+
+    #[test]
+    fn max_file_size_constant() {
+        assert_eq!(MAX_FILE_SIZE, 256 * 1024 * 1024);
+    }
+
+    #[test]
+    fn blocked_path_proc() {
+        let scanner = Scanner::new();
+        let r = scanner.scan_file("/proc/self/mem");
+        assert_eq!(
+            r.threat_type.as_deref().unwrap_or(""),
+            "special_path_skipped"
+        );
+        assert!(!r.blocked, "/proc path should not be 'blocked', just skipped");
+    }
+
+    #[test]
+    fn blocked_path_dev() {
+        let scanner = Scanner::new();
+        let r = scanner.scan_file("/dev/sda");
+        assert_eq!(
+            r.threat_type.as_deref().unwrap_or(""),
+            "special_path_skipped"
+        );
+    }
+
+    #[test]
+    fn blocked_path_sys() {
+        let scanner = Scanner::new();
+        let r = scanner.scan_file("/sys/kernel/debug");
+        assert_eq!(
+            r.threat_type.as_deref().unwrap_or(""),
+            "special_path_skipped"
+        );
+    }
+
+    #[test]
+    fn malicious_string_aho_corasick() {
+        // xp_cmdshell mixed case should be caught
+        let content = b"SELECT xP_CmDsHeLL('whoami')";
+        let flags = scan_heuristic_with_content(Path::new("/tmp/test.sql"), content);
+        assert!(
+            flags.iter().any(|f| f.rule_id == "H_MALICIOUS_STRING"),
+            "AhoCorasick should catch case-insensitive xp_cmdshell"
+        );
     }
 }
 
