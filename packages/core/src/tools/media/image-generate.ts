@@ -7,7 +7,7 @@
  *   ✅ Returns unified ImageResult regardless of provider
  *   ✅ Optional save-to-disk via outputPath
  *
- * Local SD endpoint: ssh -p LYRIE_GPU_PORT_REDACTED root@LYRIE_GPU_HOST_REDACTED
+ * Local SD endpoint: configure via LYRIE_SD_URL env var
  * (The H200 runs an A1111/AUTOMATIC1111 or ComfyUI compatible API on port 7860)
  *
  * © OTT Cybersecurity LLC — https://lyrie.ai
@@ -43,7 +43,7 @@ export interface ImageResult {
 
 /** H200 SD API endpoint (A1111 compatible). Adjust port if needed. */
 const LOCAL_SD_URL =
-  process.env.LYRIE_SD_URL || "http://LYRIE_GPU_HOST_REDACTED:7860";
+  process.env.LYRIE_SD_URL || "http://127.0.0.1:7860";
 
 const LOCAL_SD_TIMEOUT_MS = 5_000; // 5s availability check; generation itself may take longer
 

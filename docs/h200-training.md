@@ -1,6 +1,6 @@
 # Training Lyrie's Own Model on the H200
 
-> **Target:** H200 GPU node — `ssh -p LYRIE_GPU_PORT_REDACTED root@LYRIE_GPU_HOST_REDACTED`
+> **Target:** H200 GPU node — `ssh -p <LYRIE_GPU_PORT> root@<LYRIE_GPU_HOST>`
 > **Method:** GRPO (Group Relative Policy Optimization) via [Atropos](https://github.com/NousResearch/atropos)
 > **Base model:** `nous-hermes3-70b` (default; swap to any compatible HuggingFace model)
 
@@ -69,14 +69,14 @@ Sample `--status` output:
 ## Step 2 — Upload to H200
 
 ```bash
-scp training.jsonl root@LYRIE_GPU_HOST_REDACTED:~/lyrie-training/
+scp training.jsonl root@<LYRIE_GPU_HOST>:~/lyrie-training/
 ```
 
 If the directory doesn't exist yet:
 
 ```bash
-ssh -p LYRIE_GPU_PORT_REDACTED root@LYRIE_GPU_HOST_REDACTED "mkdir -p ~/lyrie-training"
-scp -P LYRIE_GPU_PORT_REDACTED training.jsonl root@LYRIE_GPU_HOST_REDACTED:~/lyrie-training/
+ssh -p <LYRIE_GPU_PORT> root@<LYRIE_GPU_HOST> "mkdir -p ~/lyrie-training"
+scp -P <LYRIE_GPU_PORT> training.jsonl root@<LYRIE_GPU_HOST>:~/lyrie-training/
 ```
 
 ---
@@ -86,7 +86,7 @@ scp -P LYRIE_GPU_PORT_REDACTED training.jsonl root@LYRIE_GPU_HOST_REDACTED:~/lyr
 SSH in and run:
 
 ```bash
-ssh -p LYRIE_GPU_PORT_REDACTED root@LYRIE_GPU_HOST_REDACTED
+ssh -p <LYRIE_GPU_PORT> root@<LYRIE_GPU_HOST>
 ```
 
 Install Atropos (one-time):

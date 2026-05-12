@@ -42,8 +42,8 @@ export interface AutoDANResult {
 }
 
 const DEFAULT_CONFIG: AutoDANConfig = {
-  host: "LYRIE_GPU_HOST_REDACTED",
-  port: LYRIE_GPU_PORT_REDACTED,
+  host: process.env.LYRIE_GPU_HOST ?? "127.0.0.1",
+  port: parseInt(process.env.LYRIE_GPU_PORT ?? "22", 10),
   scriptPath: "/root/lyrie-gpu/autodan_attack.py",
   endpoint: "https://api.openai.com/v1",
   apiKey: "",
