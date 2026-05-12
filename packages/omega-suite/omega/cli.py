@@ -22,6 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Commands:\n"
+            "  auth          Manage API keys (setup, set, get, list, unset)\n"
+            "  config        Show or manage config file\n"
             "  info          Package info and runtime details\n"
             "  scan          Static analysis on a file or directory (CodeQL + Semgrep)\n"
             "  cvss          Calculate CVSS v3.1 score from a vector string\n"
@@ -49,6 +51,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ── info ──────────────────────────────────────────────────────────────────
     sub.add_parser("info", help="Display package information and runtime details")
+
+    # ── auth ──────────────────────────────────────────────────────────────────
+    p_auth = sub.add_parser(
+        "auth",
+        help="Manage API keys (Anthropic, OpenAI, GitHub, Lyrie license)",
+        description="Store and manage API keys in ~/.lyrie/config.json (chmod 600).",
+    )
+    auth_sub = p_auth.add_subparsers(dest="auth_command", metavar="<subcommand>")
+    auth_sub.add_parser("setup", help="Interactive guided setup for all API keys")
+    auth_sub.add_parser("list",  help="List all configured keys (values redacted)")
+    p_auth_set = auth_sub.add_parser("set", help="Set a specific API key")
+    p_auth_set.add_argument("--key",   required=True, help="Key name (e.g. ANTHROPIC_API_KEY)")
+    p_auth_set.add_argument("--value", required=True, help="Key value")
+    p_auth_get = auth_sub.add_parser("get", help="Get a specific API key (redacted)")
+    p_auth_get.add_argument("--key", required=True, help="Key name")
+    p_auth_unset = auth_sub.add_parser("unset", help="Remove a specific API key")
+    p_auth_unset.add_argument("--key", required=True, help="Key name")
+
+    # ── config ────────────────────────────────────────────────────────────────
+    p_cfg = sub.add_parser(
+        "config",
+        help="Show or manage lyrie config file",
+        description="Manage ~/.lyrie/config.json",
+    )
+    cfg_sub = p_cfg.add_subparsers(dest="config_command", metavar="<subcommand>")
+    cfg_sub.add_parser("show",  help="Show current config (values redacted)")
+    cfg_sub.add_parser("path",  help="Print path to config file")
+    cfg_sub.add_parser("reset", help="Delete config file")
 
     # ── scan ──────────────────────────────────────────────────────────────────
     p_scan = sub.add_parser(
@@ -416,6 +446,8 @@ def main() -> None:
         "validate": cmd_validate,
         "intel":    cmd_intel,
         "smt":      cmd_smt,
+        "auth":     cmd_auth,
+        "config":   cmd_config,
     }
 
     handler = handlers.get(args.command)
@@ -428,3 +460,129 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ─── Auth & Config commands ───────────────────────────────────────────────────
+
+CONFIG_DIR  = os.path.expanduser("~/.lyrie")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+
+KNOWN_KEYS = {
+    "ANTHROPIC_API_KEY":   "Anthropic Claude API key (for agentic validation + exploit analysis)",
+    "OPENAI_API_KEY":      "OpenAI API key (fallback model)",
+    "GITHUB_TOKEN":        "GitHub personal access token (for lyrie intel)",
+    "LYRIE_LICENSE_KEY":   "Lyrie.ai license key (from lyrie.ai/dashboard)",
+    "CODEQL_CLI":          "Path to CodeQL CLI binary (for lyrie scan --engine codeql)",
+    "CODEQL_QUERIES":      "Path to CodeQL query packs directory",
+}
+
+def _load_config() -> dict:
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE) as f:
+            return json.load(f)
+    return {}
+
+def _save_config(cfg: dict) -> None:
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(cfg, f, indent=2)
+    os.chmod(CONFIG_FILE, 0o600)
+
+def cmd_auth(args) -> int:
+    if args.auth_command == "set":
+        if not args.key or not args.value:
+            print("error: provide --key and --value", file=sys.stderr)
+            return 1
+        cfg = _load_config()
+        cfg[args.key] = args.value
+        _save_config(cfg)
+        # Also export to current env
+        os.environ[args.key] = args.value
+        print(f"✓ {args.key} saved to {CONFIG_FILE}")
+        return 0
+
+    elif args.auth_command == "get":
+        cfg = _load_config()
+        val = cfg.get(args.key) or os.environ.get(args.key)
+        if val:
+            print(f"{args.key} = {val[:6]}{'*' * (len(val)-6)}" if len(val) > 6 else "****")
+        else:
+            print(f"{args.key} is not set")
+        return 0
+
+    elif args.auth_command == "list":
+        cfg = _load_config()
+        print(f"\n  Lyrie API Key Configuration ({CONFIG_FILE})\n")
+        for key, desc in KNOWN_KEYS.items():
+            val = cfg.get(key) or os.environ.get(key)
+            status = f"{'*' * 8}{val[-4:]}" if val else "NOT SET"
+            print(f"  {'✓' if val else '✗'} {key:<28} {status}")
+            print(f"    {desc}\n")
+        return 0
+
+    elif args.auth_command == "unset":
+        cfg = _load_config()
+        if args.key in cfg:
+            del cfg[args.key]
+            _save_config(cfg)
+            print(f"✓ {args.key} removed")
+        else:
+            print(f"{args.key} was not set")
+        return 0
+
+    elif args.auth_command == "setup":
+        # Interactive guided setup
+        print("\n  Lyrie — API Key Setup")
+        print("  ─────────────────────────────────────────")
+        print(f"  Keys stored in: {CONFIG_FILE} (chmod 600)\n")
+        cfg = _load_config()
+        for key, desc in KNOWN_KEYS.items():
+            current = cfg.get(key) or os.environ.get(key)
+            current_display = f" (current: {'*' * 8}{current[-4:]})" if current else ""
+            val = input(f"  {key}{current_display}\n  {desc}\n  → ").strip()
+            if val:
+                cfg[key] = val
+            print()
+        _save_config(cfg)
+        print(f"  ✓ Configuration saved to {CONFIG_FILE}\n")
+        return 0
+
+    parser.print_help()
+    return 0
+
+
+def cmd_config(args) -> int:
+    if args.config_command == "show":
+        cfg = _load_config()
+        if args.json:
+            # Redact values for security
+            redacted = {k: f"{'*'*8}{v[-4:]}" if v else "" for k, v in cfg.items()}
+            print(json.dumps({"config_file": CONFIG_FILE, "keys": redacted}, indent=2))
+        else:
+            print(f"\n  Config: {CONFIG_FILE}")
+            if cfg:
+                for k, v in cfg.items():
+                    print(f"  {k} = {'*' * 8}{v[-4:] if len(v) > 4 else '****'}")
+            else:
+                print("  (empty — run: lyrie auth setup)")
+            print()
+        return 0
+
+    elif args.config_command == "path":
+        print(CONFIG_FILE)
+        return 0
+
+    elif args.config_command == "reset":
+        if os.path.exists(CONFIG_FILE):
+            confirm = input(f"Delete {CONFIG_FILE}? [y/N] ").strip().lower()
+            if confirm == "y":
+                os.remove(CONFIG_FILE)
+                print("✓ Config deleted")
+            else:
+                print("Aborted")
+        else:
+            print("No config file found")
+        return 0
+
+    parser.print_help()
+    return 0
