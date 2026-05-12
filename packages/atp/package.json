@@ -1,6 +1,6 @@
 {
   "name": "@lyrie/atp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Agent Trust Protocol (ATP) — the cryptographic standard for AI agent identity, scope, and action verification. Reference implementation.",
   "author": "OTT Cybersecurity LLC <dev@lyrie.ai> (https://lyrie.ai)",
   "license": "MIT",
@@ -26,11 +26,12 @@
     "LICENSE"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/overthetopseo/lyrie-agent.git",
+    "url": "git+https://github.com/OTT-Cybersecurity-LLC/lyrie-ai.git",
     "directory": "packages/atp"
   },
   "homepage": "https://lyrie.ai/atp",

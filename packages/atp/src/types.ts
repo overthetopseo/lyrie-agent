@@ -18,7 +18,9 @@
 
 /** Protocol version this implementation produces and validates. */
 export const ATP_VERSION = "1.0" as const;
-export type AtpVersion = typeof ATP_VERSION;
+export const ATP_VERSION_2 = "2.0" as const;
+/** All supported ATP wire-format versions. */
+export type AtpVersion = "1.0" | "2.0";
 
 // ─── Scope Declaration Language (SDL) ────────────────────────────────────────
 

@@ -1,13 +1,13 @@
 {
   "name": "lyrie-agent",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "The world's first autonomous AI agent with built-in cybersecurity",
   "author": "OTT Cybersecurity LLC <dev@lyrie.ai> (https://lyrie.ai)",
   "license": "MIT",
   "packageManager": "bun@1.3.11",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/overthetopseo/lyrie-agent.git"
+    "url": "git+https://github.com/OTT-Cybersecurity-LLC/lyrie-ai.git"
   },
   "homepage": "https://lyrie.ai",
   "workspaces": [

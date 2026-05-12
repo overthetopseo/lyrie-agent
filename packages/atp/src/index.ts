@@ -22,7 +22,7 @@ export type {
   VerificationErrorCode,
   VerificationResult,
 } from "./types";
-export { ATP_VERSION } from "./types";
+export { ATP_VERSION, ATP_VERSION_2 } from "./types";
 
 // ─── Crypto helpers (curated public surface) ─────────────────────────────────
 export { generateKeyPair, sha256Hex, sha256BytesHex, canonicalize } from "./crypto";
@@ -85,3 +85,27 @@ export type { AtpArtifact, AtpVerifyContext } from "./verify";
 // ─── Badge ───────────────────────────────────────────────────────────────────
 export { generateBadge } from "./badge";
 export type { BadgeOptions, BadgeOutput } from "./badge";
+
+// ─── Delegation (v2) ─────────────────────────────────────────────────────────
+export {
+  createDelegation,
+  verifyDelegation,
+  verifyDelegationChain,
+} from "./delegation";
+export type { DelegationCertificate } from "./delegation";
+
+// ─── Revocation (v2) ─────────────────────────────────────────────────────────
+export {
+  createRevocationList,
+  isRevoked,
+  addRevocation,
+} from "./revocation";
+export type { RevocationEntry, RevocationList, RevocationReason } from "./revocation";
+
+// ─── Multi-Sig (v2) ──────────────────────────────────────────────────────────
+export {
+  createMultiSigRequest,
+  addSignature,
+  isAuthorized,
+} from "./multisig";
+export type { MultiSigRequest } from "./multisig";
